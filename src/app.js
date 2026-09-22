@@ -12,6 +12,15 @@ const sendJson = (response, status, body, headers = {}) => {
   response.end(JSON.stringify(body));
 };
 
+const sendRedirect = (response, location) => {
+  response.writeHead(302, {
+    Location: location,
+    'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer',
+  });
+  response.end();
+};
+
 const readJson = async (request) => {
   const chunks = [];
   let size = 0;
@@ -49,6 +58,42 @@ const requiredIdentifier = (value, name) => {
   return normalized;
 };
 
+const requiredReturnUrl = (value, allowedOrigins) => {
+  let parsed;
+  try {
+    parsed = new URL(String(value || ''));
+  } catch {
+    throw new SebValidationError(
+      'invalid_return_url',
+      'A valid exam return URL is required.',
+      400
+    );
+  }
+
+  if (!allowedOrigins.includes(parsed.origin)) {
+    throw new SebValidationError(
+      'invalid_return_url',
+      'The exam return URL is not allowed.'
+    );
+  }
+
+  parsed.hash = '';
+  return parsed.href;
+};
+
+const getPublicRequestUrl = (request) => {
+  const forwardedProtocol = String(request.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim();
+  const forwardedHost = String(request.headers['x-forwarded-host'] || '')
+    .split(',')[0]
+    .trim();
+  const protocol =
+    forwardedProtocol || (request.socket.encrypted ? 'https' : 'http');
+  const host = forwardedHost || request.headers.host;
+  return new URL(request.url, `${protocol}://${host}`).href;
+};
+
 const getBearerToken = (request) => {
   const authorization = String(request.headers.authorization || '');
   return authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -81,6 +126,8 @@ export const createSebValidationHandler =
     }
 
     const requestUrl = new URL(request.url, 'http://localhost');
+    const isHeaderBootstrap =
+      request.method === 'GET' && requestUrl.pathname === '/v1/seb/bootstrap';
     if (request.method === 'GET' && requestUrl.pathname === '/health') {
       sendJson(
         response,
@@ -96,7 +143,11 @@ export const createSebValidationHandler =
       return;
     }
 
-    if (origin && !config.allowedOrigins.includes(origin)) {
+    if (
+      !isHeaderBootstrap &&
+      origin &&
+      !config.allowedOrigins.includes(origin)
+    ) {
       sendJson(
         response,
         403,
@@ -107,6 +158,60 @@ export const createSebValidationHandler =
     }
 
     try {
+      if (isHeaderBootstrap) {
+        const examId = requiredIdentifier(
+          requestUrl.searchParams.get('examId'),
+          'examId'
+        );
+        const studentId = requiredIdentifier(
+          requestUrl.searchParams.get('studentId'),
+          'studentId'
+        );
+        const returnUrl = requiredReturnUrl(
+          requestUrl.searchParams.get('returnUrl'),
+          config.allowedOrigins
+        );
+        const pageUrl = getPublicRequestUrl(request);
+        const pageOrigin = new URL(pageUrl).origin;
+
+        validateSebEvidence({
+          config: {
+            ...config,
+            allowedOrigins: [
+              ...new Set([...config.allowedOrigins, pageOrigin]),
+            ],
+          },
+          evidence: {
+            pageUrl,
+            sebVersion: null,
+            simulated: false,
+            configKeyHash: request.headers['x-safeexambrowser-configkeyhash'],
+            browserExamKeyHash:
+              request.headers['x-safeexambrowser-requesthash'],
+          },
+        });
+
+        const token = issueSebSessionToken(
+          {
+            examId,
+            studentId,
+            pageUrl: returnUrl,
+            sebVersion: 'http-header-validation',
+            simulated: false,
+          },
+          {
+            secret: config.sessionSecret,
+            ttlSeconds: config.tokenTtlSeconds,
+          }
+        );
+        const destination = new URL(returnUrl);
+        const fragment = new URLSearchParams(destination.hash.slice(1));
+        fragment.set('seb_session', token);
+        destination.hash = fragment.toString();
+        sendRedirect(response, destination.href);
+        return;
+      }
+
       if (
         request.method === 'POST' &&
         requestUrl.pathname === '/v1/seb/validate'
@@ -118,14 +223,14 @@ export const createSebValidationHandler =
           config,
           evidence: {
             pageUrl: body.pageUrl,
-          sebVersion: body.sebVersion,
-          simulated: body.simulated === true,
-          configKeyHash:
-            body.configKeyHash ||
-            request.headers['x-safeexambrowser-configkeyhash'],
-          browserExamKeyHash:
-            body.browserExamKeyHash ||
-            request.headers['x-safeexambrowser-requesthash'],
+            sebVersion: body.sebVersion,
+            simulated: body.simulated === true,
+            configKeyHash:
+              body.configKeyHash ||
+              request.headers['x-safeexambrowser-configkeyhash'],
+            browserExamKeyHash:
+              body.browserExamKeyHash ||
+              request.headers['x-safeexambrowser-requesthash'],
           },
         });
         const token = issueSebSessionToken(

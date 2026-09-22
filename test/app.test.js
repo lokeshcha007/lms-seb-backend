@@ -101,3 +101,60 @@ test('rejects requests from origins outside the allow-list', async () => {
     assert.equal((await response.json()).code, 'origin_not_allowed');
   });
 });
+
+test('validates SEB request headers on the bootstrap route and redirects with a session token', async () => {
+  await withServer(async (baseUrl) => {
+    const returnUrl = 'http://localhost:5177/exam/seb-check';
+    const bootstrapUrl = new URL('/v1/seb/bootstrap', baseUrl);
+    bootstrapUrl.searchParams.set('examId', 'exam-1');
+    bootstrapUrl.searchParams.set('studentId', 'student-1');
+    bootstrapUrl.searchParams.set('returnUrl', returnUrl);
+
+    const response = await fetch(bootstrapUrl, {
+      redirect: 'manual',
+      headers: {
+        'X-SafeExamBrowser-ConfigKeyHash': createSebRequestHash(
+          bootstrapUrl.href,
+          config.configKey
+        ),
+      },
+    });
+
+    assert.equal(response.status, 302);
+    const destination = new URL(response.headers.get('location'));
+    assert.equal(destination.origin + destination.pathname, returnUrl);
+    const token = new URLSearchParams(destination.hash.slice(1)).get(
+      'seb_session'
+    );
+    assert.ok(token);
+
+    const verifyResponse = await fetch(`${baseUrl}/v1/seb/session/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Origin: 'http://localhost:5177',
+      },
+      body: JSON.stringify({ examId: 'exam-1', studentId: 'student-1' }),
+    });
+    assert.equal(verifyResponse.status, 200);
+    assert.equal((await verifyResponse.json()).valid, true);
+  });
+});
+
+test('rejects bootstrap navigation without a valid SEB Config Key header', async () => {
+  await withServer(async (baseUrl) => {
+    const bootstrapUrl = new URL('/v1/seb/bootstrap', baseUrl);
+    bootstrapUrl.searchParams.set('examId', 'exam-1');
+    bootstrapUrl.searchParams.set('studentId', 'student-1');
+    bootstrapUrl.searchParams.set(
+      'returnUrl',
+      'http://localhost:5177/exam/seb-check'
+    );
+
+    const response = await fetch(bootstrapUrl, { redirect: 'manual' });
+    const payload = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, 'invalid_config_key');
+  });
+});
