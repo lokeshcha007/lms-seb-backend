@@ -27,3 +27,14 @@ test('uses SEB_PORT when no platform port is provided', () => {
 
   assert.equal(config.port, 43126);
 });
+
+test('accepts multiple platform-specific SEB Config Keys', () => {
+  const config = loadSebServerConfig({
+    ...validEnvironment,
+    SEB_CONFIG_KEY: '',
+    SEB_CONFIG_KEYS: `${'a'.repeat(64)},${'b'.repeat(64)}`,
+  });
+
+  assert.deepEqual(config.configKeys, ['a'.repeat(64), 'b'.repeat(64)]);
+  assert.equal(config.configKey, 'a'.repeat(64));
+});

@@ -43,6 +43,15 @@ SEB_SESSION_TTL_SECONDS=300
 SEB_ALLOW_SIMULATION=false
 ```
 
+If Windows and macOS use different `.seb` files, configure both approved keys
+as a comma-separated allow-list instead:
+
+```text
+SEB_CONFIG_KEYS=<windows-config-key>,<macos-config-key>
+```
+
+`SEB_CONFIG_KEYS` takes precedence over the single `SEB_CONFIG_KEY` value.
+
 Never place `SEB_CONFIG_KEY`, `SEB_BROWSER_EXAM_KEYS`, or
 `SEB_SESSION_SECRET` in a `VITE_*` variable. Vite variables are exposed to the
 browser.

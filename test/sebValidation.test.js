@@ -53,6 +53,24 @@ test('rejects an invalid Config Key request hash', () => {
   );
 });
 
+test('accepts any approved platform-specific Config Key', () => {
+  const pageUrl = 'https://exam.example/exam/seb-check';
+  const alternateKey = 'c'.repeat(64);
+  const result = validateSebEvidence({
+    config: { ...config, configKeys: [config.configKey, alternateKey] },
+    evidence: {
+      pageUrl,
+      configKeyHash: createSebRequestHash(pageUrl, alternateKey),
+      browserExamKeyHash: createSebRequestHash(
+        pageUrl,
+        config.browserExamKeys[0]
+      ),
+    },
+  });
+
+  assert.equal(result.configKeyValid, true);
+});
+
 test('rejects page URLs from unapproved origins', () => {
   assert.throws(
     () =>

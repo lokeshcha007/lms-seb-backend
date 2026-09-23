@@ -61,11 +61,20 @@ export const loadSebServerConfig = (environment = process.env) => {
     );
   }
 
+  const configKeys = splitCsv(
+    environment.SEB_CONFIG_KEYS || environment.SEB_CONFIG_KEY
+  ).map((key, index) => requireHexKey(key, `SEB_CONFIG_KEYS[${index}]`));
+  if (!configKeys.length) {
+    throw new Error('SEB_CONFIG_KEY or SEB_CONFIG_KEYS is required.');
+  }
+
   return {
     port,
     host,
     allowedOrigins,
-    configKey: requireHexKey(environment.SEB_CONFIG_KEY, 'SEB_CONFIG_KEY'),
+    // Keep configKey for backward compatibility with existing integrations.
+    configKey: configKeys[0],
+    configKeys,
     browserExamKeys,
     requireBrowserExamKey,
     sessionSecret,

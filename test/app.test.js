@@ -142,7 +142,7 @@ test('validates SEB request headers on the bootstrap route and redirects with a 
   });
 });
 
-test('rejects bootstrap navigation without a valid SEB Config Key header', async () => {
+test('redirects bootstrap failures back with a safe error code', async () => {
   await withServer(async (baseUrl) => {
     const bootstrapUrl = new URL('/v1/seb/bootstrap', baseUrl);
     bootstrapUrl.searchParams.set('examId', 'exam-1');
@@ -153,8 +153,15 @@ test('rejects bootstrap navigation without a valid SEB Config Key header', async
     );
 
     const response = await fetch(bootstrapUrl, { redirect: 'manual' });
-    const payload = await response.json();
-    assert.equal(response.status, 403);
-    assert.equal(payload.code, 'invalid_config_key');
+    assert.equal(response.status, 302);
+    const destination = new URL(response.headers.get('location'));
+    assert.equal(
+      destination.origin + destination.pathname,
+      'http://localhost:5177/exam/seb-check'
+    );
+    assert.equal(
+      new URLSearchParams(destination.hash.slice(1)).get('seb_error'),
+      'invalid_config_key'
+    );
   });
 });

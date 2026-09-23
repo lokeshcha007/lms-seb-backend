@@ -128,6 +128,7 @@ export const createSebValidationHandler =
     const requestUrl = new URL(request.url, 'http://localhost');
     const isHeaderBootstrap =
       request.method === 'GET' && requestUrl.pathname === '/v1/seb/bootstrap';
+    let bootstrapReturnUrl = null;
     if (request.method === 'GET' && requestUrl.pathname === '/health') {
       sendJson(
         response,
@@ -171,6 +172,7 @@ export const createSebValidationHandler =
           requestUrl.searchParams.get('returnUrl'),
           config.allowedOrigins
         );
+        bootstrapReturnUrl = returnUrl;
         const pageUrl = getPublicRequestUrl(request);
         const pageOrigin = new URL(pageUrl).origin;
 
@@ -301,6 +303,14 @@ export const createSebValidationHandler =
       );
     } catch (error) {
       const known = error instanceof SebValidationError;
+      if (known && isHeaderBootstrap && bootstrapReturnUrl) {
+        const destination = new URL(bootstrapReturnUrl);
+        const fragment = new URLSearchParams(destination.hash.slice(1));
+        fragment.set('seb_error', error.code);
+        destination.hash = fragment.toString();
+        sendRedirect(response, destination.href);
+        return;
+      }
       sendJson(
         response,
         known ? error.status : 500,

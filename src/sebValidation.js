@@ -72,8 +72,12 @@ export const validateSebEvidence = ({ evidence, config }) => {
   }
 
   const configKeyHash = evidence.configKeyHash;
-  const expectedConfigHash = createSebRequestHash(pageUrl, config.configKey);
-  if (!safeHashEqual(configKeyHash, expectedConfigHash)) {
+  const configuredKeys =
+    config.configKeys?.length > 0 ? config.configKeys : [config.configKey];
+  const configKeyValid = configuredKeys.some((key) =>
+    safeHashEqual(configKeyHash, createSebRequestHash(pageUrl, key))
+  );
+  if (!configKeyValid) {
     throw new SebValidationError(
       'invalid_config_key',
       'Safe Exam Browser Config Key validation failed.'
